@@ -22,3 +22,4 @@ dependencies:
     - aicsimageio
     - aicspylibczi
     - napari
+    - git+https://github.com/UH-LMU/napari-lmu.git
