@@ -1,0 +1,24 @@
+name: napari-lmu  # Name of your environment
+
+channels:
+  - defaults
+  - conda-forge  # Additional channel for some packages
+
+dependencies:
+  - dask
+  - ipykernel
+  - jupyterlab
+  - matplotlib
+  - nb_conda_kernels
+  - numpy
+  - pandas
+  - pip
+  - pyqt
+  - python=3.10
+  - scikit-learn
+  - scipy
+  - seaborn
+  - pip:
+    - aicsimageio
+    - aicspylibczi
+    - napari

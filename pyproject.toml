@@ -1,0 +1,22 @@
+[project]
+name = "napari_lmu"
+version = "0.1.1"
+authors = [
+  { name="Harri Jäälinoja", email="harri.x.jaalinoja@helsinki.fi" },
+]
+description = "Scripts to start Napari to browse data from LMU HCS instruments."
+readme = "README.md"
+requires-python = ">=3.8"
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "Operating System :: OS Independent",
+    "License :: OSI Approved :: MIT License",
+]
+
+[project.urls]
+Homepage = "https://github.com/UH-LMU/napari-lmu"
+Issues = "https://github.com/UH-LMU/napari-lmu/issues"
+
+[project.scripts]
+napari-celliq = "napari_lmu.celliq_cellpose_browse:main"
+napari-moldev = "napari_lmu.moldev_composite:main"
