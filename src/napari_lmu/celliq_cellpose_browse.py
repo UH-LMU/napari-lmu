@@ -446,7 +446,8 @@ def main():
     #viewer.window.add_dock_widget(select_folder_labels, area='right')
     viewer.window.add_dock_widget(FolderSelectors(), area='right')
     viewer.window.add_dock_widget(navigate_wellsites, area='right')
-    
+
+    viewer.window._qt_window.setWindowTitle("napari-celliq")
 
     napari.run()
 

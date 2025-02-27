@@ -470,6 +470,8 @@ def main(wells, nwells, nsites):
     # Add button to Napari viewer
     viewer.window.add_dock_widget(save_button, area="right")
 
+    viewer.window._qt_window.setWindowTitle("napari-moldev")
+
     napari.run()
 
 
