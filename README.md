@@ -8,8 +8,8 @@ Find Anaconda in Software Center, install latest version.
 ## Create and activate environment
 Download the environment file from this repository (env\_napari.yml).
 ```
-micromamba env create -f env_napari.yml
-micromamba activate napari-lmu
+conda env create -f env_napari.yml
+conda activate napari-lmu
 ```
 
 ## Run the scripts
