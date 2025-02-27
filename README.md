@@ -6,9 +6,9 @@ Scripts to start Napari to browse data from LMU HCS instruments. The data struct
 Find Anaconda in Software Center, install latest version.
 
 ## Create and activate environment
-Download the environment file from this repository (env\_napari\_20250226.yml).
+Download the environment file from this repository (env\_napari.yml).
 ```
-micromamba env create -f env_napari_20250226.yml
+micromamba env create -f env_napari.yml
 micromamba activate napari-lmu
 ```
 

@@ -6,10 +6,8 @@ channels:
 
 dependencies:
   - dask
-  - ipykernel
   - jupyterlab
   - matplotlib
-  - nb_conda_kernels
   - numpy
   - pandas
   - pip
