@@ -32,7 +32,7 @@ SITE = 'Site'
 CHANNEL = 'Channel'
 UUID = 'UUID'
 
-def create_file_list(orig, wells= [], nwells=-1, nsites=-1):
+def create_file_list(orig, wells=[], nwells=-1, nsites=-1):
     print(orig)
     if not orig:
         return pd.DataFrame()
@@ -287,8 +287,8 @@ final_dask_array_3d = np.array(0)
 
 @click.command()
 @click.option("--wells", default='ALL', help="Comma-separated list of wells to show.")
-@click.option("--nwells", type=int, help="Number of wells to show.")
-@click.option("--nsites", type=int, help="Number of sites per well to show.")
+@click.option("--nwells", type=int, default=-1, help="Number of wells to show (-1 for all).")
+@click.option("--nsites", type=int, default=-1, help="Number of sites per well to show (-1 for all).")
 def main(wells, nwells, nsites):
 
     well_list = wells.split(",") if wells != "ALL" else []
