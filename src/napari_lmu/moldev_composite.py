@@ -24,7 +24,7 @@ colormap = ["blue", "green", "red"]
 
 PATH = 'Path'
 DATE = 'Date'
-TIMEPOINT = 'TimePoint'
+TSTEP = 'TStep'
 ZSTEP = 'ZStep'
 PLATE = 'Plate'
 WELL = 'Well'
@@ -38,7 +38,7 @@ def create_file_list(orig, wells=[], nwells=-1, nsites=-1):
         return pd.DataFrame()
     
     metadata_columns = {
-        'mc2': TIMEPOINT,
+        'mc2': TSTEP,
         'mc3': ZSTEP,
         'mc4': PLATE,
         'mc5': WELL,
@@ -73,6 +73,7 @@ def create_file_list(orig, wells=[], nwells=-1, nsites=-1):
     df[WELL] = df[WELL].astype(str)
     df[SITE] = df[SITE].astype(int)
     df[CHANNEL] = df[CHANNEL].astype(str)
+    df[TSTEP] = df[TSTEP].astype(int)
     df[ZSTEP] = df[ZSTEP].astype(int)
 
     if len(wells) > 0:
@@ -96,12 +97,12 @@ def get_stacks_and_projections(df):
     print(df.ZStep.unique())
     mask = df.ZStep > 1
     ch_z = df[mask][CHANNEL].unique()
-    #print(f'Channels with slices: {ch_z}')
+    print(f'Channels with slices: {ch_z}')
 
     # find channels with projections (should be the same as ch_z)
     mask = df.ZStep == 0
     ch_p = df[mask][CHANNEL].unique()
-    #print(f'Channels with projections: {ch_p}')
+    print(f'Channels with projections: {ch_p}')
 
     assert (np.sort(ch_z) == np.sort(ch_p)).all()
     
@@ -115,8 +116,8 @@ def get_stacks_and_projections(df):
     stacks = df[mask_z].copy().reset_index(drop=True)
     projs = df[mask_p].copy().reset_index(drop=True)
 
-    stacks.sort_values(by=[PLATE, WELL, SITE, ZSTEP, CHANNEL], inplace=True, ignore_index=True)
-    projs.sort_values(by=[PLATE, WELL, SITE, CHANNEL], inplace=True, ignore_index=True)
+    stacks.sort_values(by=[PLATE, WELL, SITE, TSTEP, ZSTEP, CHANNEL], inplace=True, ignore_index=True)
+    projs.sort_values(by=[PLATE, WELL, SITE, TSTEP, CHANNEL], inplace=True, ignore_index=True)
     
     print(f'stacks.shape: {stacks.shape}')
     print(f'projs.shape: {projs.shape}')
@@ -153,7 +154,7 @@ def create_dask_array(grouped2d):
                 #print(site_group.shape)
 
                 # Explode list columns
-                exploded_site_group = site_group.explode([PATH, TIMEPOINT, CHANNEL])
+                exploded_site_group = site_group.explode([PATH, TSTEP, CHANNEL])
                 #print(exploded_site_group.shape)
                 #print(exploded_site_group.apply(type).unique())
                 #print(exploded_site_group.head())
@@ -189,7 +190,7 @@ def create_dask_array(grouped2d):
     return index_map, index_map_reverse, final_dask_array
 
 
-def create_dask_array_with_z(grouped3d):
+def create_dask_array_with_t_z(grouped3d):
     # Dictionary to store Dask arrays for each plate
     plates = []
     plate_stack = None
@@ -209,8 +210,6 @@ def create_dask_array_with_z(grouped3d):
             # Iterate over each site
             for site, site_group in tqdm(well_group.groupby(SITE),
                                          desc=f'Reading well {well}'):
-                z_steps = []
-
                 # At this point, we know the plate, well, and site
                 # Add an entry to index_mapping for this site
                 index_map[(plate, well, site)] = (len(plates), len(wells), len(sites))
@@ -221,35 +220,42 @@ def create_dask_array_with_z(grouped3d):
                 #print(site_group[ZSTEP].apply(type).unique())  # Check the type of elements in the ZStep column
                 #print(site_group[ZSTEP].head())  # Inspect the first few rows
 
+                t_steps = []
+
                 # Explode both ZStep and Channel columns to ensure they correspond correctly
-                exploded_df = site_group.explode([PATH, TIMEPOINT, ZSTEP, CHANNEL])
-                #print(exploded_df.shape)
+                exploded_df = site_group.explode([PATH, TSTEP, ZSTEP, CHANNEL])
+                #print(f'exploded_df.shape {exploded_df.shape}')
                 #print(exploded_df.apply(type).unique())
                 #print(exploded_df.head())
 
-                # Group by ZStep to handle stacking of channels for each Z-slice
-                for zstep, zstep_group in exploded_df.groupby(ZSTEP):
-                    channels = []
+                for tstep, tstep_group in exploded_df.groupby(TSTEP):
+                    # Group by ZStep to handle stacking of channels for each Z-slice
+                    z_steps = []
+                    for zstep, zstep_group in tstep_group.groupby(ZSTEP):
+                        channels = []
 
-                    # Iterate over each channel and stack them for the current Z-step
-                    for channel_path in zstep_group[PATH]:
-                        #print(plate, well, site, zstep, channel_path)
-                        img = AICSImage(channel_path)
-                        # Use img.get_image_dask_data() for lazy loading of data
-                        dask_data = img.get_image_dask_data()
-                        #print(dask_data.shape)
-                        dask_data = dask_data.squeeze()
-                        #print(dask_data.shape)
-                        channels.append(dask_data)
+                        # Iterate over each channel and stack them for the current Z-step
+                        for channel_path in zstep_group[PATH]:
+                            #print(plate, well, site, zstep, channel_path)
+                            img = AICSImage(channel_path)
+                            # Use img.get_image_dask_data() for lazy loading of data
+                            dask_data = img.get_image_dask_data()
+                            #print(dask_data.shape)
+                            dask_data = dask_data.squeeze()
+                            #print(dask_data.shape)
+                            channels.append(dask_data)
 
-                    #print()
-                    # Stack channels along a new axis (assume channels have same shape)
-                    z_step_stack = da.stack(channels, axis=0)  # Stack channels for this Z-step
-                    z_steps.append(z_step_stack)
+                        #print()
+                        # Stack channels along a new axis (assume channels have same shape)
+                        z_step_stack = da.stack(channels, axis=0)  # Stack channels for this Z-step
+                        z_steps.append(z_step_stack)
+                        
+                    t_step_stack = da.stack(z_steps, axis=0)
+                    t_steps.append(t_step_stack)
 
                 #print()
                 # Stack Z-steps into a full 3D array for the current site
-                site_stack = da.stack(z_steps, axis=0)  # Stack Z-slices to form a 3D site-level array
+                site_stack = da.stack(t_steps, axis=0)  # Stack Z-slices to form a 3D site-level array
                 #print(site_stack.shape)
                 sites.append(site_stack)
 
@@ -371,7 +377,7 @@ def main(wells, nwells, nsites):
         if not stacks.empty:
             t = time.time()
             grouped3d = stacks.groupby(by=[PLATE, WELL, SITE]).agg(list)
-            index_map_3d, index_map_reverse_3d, final_dask_array_3d = create_dask_array_with_z(grouped3d)
+            index_map_3d, index_map_reverse_3d, final_dask_array_3d = create_dask_array_with_t_z(grouped3d)
             elapsed = time.time() - t
             print(f'Read stacks in {elapsed}')
             
@@ -387,7 +393,7 @@ def main(wells, nwells, nsites):
             # Add 3D image with ZStep axis
             viewer.add_image(
                 final_dask_array_3d, 
-                channel_axis=4,  # Channel is 4th dimension in 3D
+                channel_axis=5,  # Channel is 4th dimension in 3D
                 name=wavelengths,
             )
 
@@ -404,11 +410,11 @@ def main(wells, nwells, nsites):
                 names_2d = [w + " projection" for w in wavelengths]
                 viewer.add_image(
                     expanded_2d_da, 
-                    channel_axis=4,  # Channel is 4th dimension in 3D
+                    channel_axis=5,  # Channel is 4th dimension in 3D
                     name=names_2d,
                 )
 
-            viewer.dims.axis_labels = ['Plate', 'Well', 'Site', 'Z-slice', 'X', 'Y']
+            viewer.dims.axis_labels = ['Plate', 'Well', 'Site', 'TimeStep', 'Z-slice', 'X', 'Y']
 
             # start from Z-slice 0 to have labels visible
             # start from well 0 to match pull-down
