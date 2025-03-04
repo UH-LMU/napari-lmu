@@ -370,7 +370,7 @@ def main(wells, nwells, nsites, ftype_labels):
             return "Unknown plate or wellsite index"
 
         
-    def update_filename(event):
+    def update_well_site(event):
         current_index = tuple(viewer.dims.current_step)  # Get current slider positions
         #print(f"Current index: {current_index}")
 
@@ -379,7 +379,7 @@ def main(wells, nwells, nsites, ftype_labels):
 
         # Display filename
         viewer.text_overlay.visible = True
-        viewer.text_overlay.text = f'{well} {site+1}'
+        viewer.text_overlay.text = f'{well}_s{site}'
 
 
     @magicgui(
@@ -463,6 +463,9 @@ def main(wells, nwells, nsites, ftype_labels):
             for i in range(len(viewer.dims.point)):
                 #print(i)
                 viewer.dims.set_point(i,0)
+
+            # Connect to Napari slider updates
+            viewer.dims.events.current_step.connect(update_well_site)
 
         else:
             print('No images found (stacks.empty)')
