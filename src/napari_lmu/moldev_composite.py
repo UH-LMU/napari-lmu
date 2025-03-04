@@ -32,7 +32,7 @@ SITE = 'Site'
 CHANNEL = 'Channel'
 UUID = 'UUID'
 
-def create_file_list(orig, wells=[], nwells=-1, nsites=-1):
+def create_file_list(orig, ftype='tif', wells=[], nwells=-1, nsites=-1):
     print(orig)
     if not orig:
         return pd.DataFrame()
@@ -46,7 +46,7 @@ def create_file_list(orig, wells=[], nwells=-1, nsites=-1):
         'mc7': CHANNEL,
     }
 
-    files = [(str(x)) for x in orig.glob("**/*.tif") if not "thumb" in x.name]
+    files = [(str(x)) for x in orig.glob(f'**/*.{ftype}') if not "thumb" in x.name]
     df = pd.DataFrame(files, columns=[PATH])
 
     if not df.empty:
@@ -60,11 +60,8 @@ def create_file_list(orig, wells=[], nwells=-1, nsites=-1):
         + r'[/\\]t(?P<{mc2}>\d+)_(?P<{mc5}>\w\d{{2}})_s(?P<{mc6}>\d{{1,2}})_(?P<{mc7}>w\d)_z(?P<{mc3}>\d+)'\
     ).format(**metadata_columns)
 
-    #print(pattern)
-    
     # Apply the regex pattern and extract the desired columns
     df_extracted = df[PATH].str.extract(pattern)
-    print()
 
     # Add the extracted columns back to the original dataframe
     df = df.join(df_extracted)
@@ -88,6 +85,7 @@ def create_file_list(orig, wells=[], nwells=-1, nsites=-1):
         mask = df[SITE] <= nsites
         df = df[mask]
     
+    df.sort_values(by=[PLATE, WELL, SITE, TSTEP, ZSTEP, CHANNEL], inplace=True, ignore_index=True)
     return df
 
 
@@ -283,11 +281,20 @@ def get_lmu_active1():
     
 
 # Store the last selected folder
-last_selected_folder = Path(get_lmu_active1()) / 'instruments/Micro'  # Default to home directory
+last_selected_folder = Path(get_lmu_active1()) / 'instruments/Micro'
+last_selected_folder = '/home/hajaalin/data/anaskotl'
+last_selected_folder_labels = Path(get_lmu_active1()) / 'airflow/micro'
+last_selected_folder_labels = last_selected_folder
+
+# Store dataframe with images
+df_images = pd.DataFrame()
+df_images_grouped = pd.DataFrame()
+df_labels = pd.DataFrame()
+df_missing_labels = pd.DataFrame()
 
 index_map_reverse_2d = {}
 index_map_reverse_3d = {}
-final_dask_array_2d = np.array(0)
+da_projections = np.array(0)
 final_dask_array_3d = np.array(0)
 
 
@@ -295,7 +302,8 @@ final_dask_array_3d = np.array(0)
 @click.option("--wells", default='ALL', help="Comma-separated list of wells to show.")
 @click.option("--nwells", type=int, default=-1, help="Number of wells to show (-1 for all).")
 @click.option("--nsites", type=int, default=-1, help="Number of sites per well to show (-1 for all).")
-def main(wells, nwells, nsites):
+@click.option("--ftype_labels", type=str, default='tif', help="file type (labels)")
+def main(wells, nwells, nsites, ftype_labels):
 
     well_list = wells.split(",") if wells != "ALL" else []
     
@@ -342,14 +350,43 @@ def main(wells, nwells, nsites):
             if well in self.wells:
                 viewer.dims.set_point(IDX_WELL, self.wells.index(well))
 
+            #print(f'viewer.dims.current_step: {viewer.dims.current_step}')
+
     navigate_wells = NavigationWidget()
 
 
+    def map_index_to_plate_well_site(index):
+        #print(f'map_index_to_filename {index}')
+        try:
+            # Extract Plate, Well, and Site from the Napari index
+            plate_idx, well_idx, site_idx, _ , _,  _, _ = index  # Ignore last three indices
+
+            plate, well, site = index_map_reverse_3d[(plate_idx, well_idx, site_idx)]
+            #print(f'plate, well, site: {plate}, {well}, {site}')
+
+            return plate, well, site
+
+        except (KeyError, IndexError):
+            return "Unknown plate or wellsite index"
+
+        
+    def update_filename(event):
+        current_index = tuple(viewer.dims.current_step)  # Get current slider positions
+        #print(f"Current index: {current_index}")
+
+        # Map index to filename using your dataframe
+        plate, well, site = map_index_to_plate_well_site(current_index)  # Define this function
+
+        # Display filename
+        viewer.text_overlay.visible = True
+        viewer.text_overlay.text = f'{well} {site+1}'
+
+
     @magicgui(
-        folder={"label": "Select Folder", "mode": "d", "value": last_selected_folder},  # "d" stands for directory
+        folder={"label": "Select Folder (images)", "mode": "d", "value": last_selected_folder},  # "d" stands for directory
         auto_call=True,
     )
-    def select_folder(folder: Path):
+    def select_folder_images(folder: Path):
         if not folder or not folder.exists():
             print("Invalid folder")
             return
@@ -357,13 +394,16 @@ def main(wells, nwells, nsites):
         global last_selected_folder
         last_selected_folder = folder  # Store the selected folder
 
+        global df_images
+        global df_images_grouped
         global index_map_reverse_2d
         global index_map_reverse_3d
-        global final_dask_array_2d
-        global final_dask_array_3d
+        global da_projections
+        global da_images
 
         # create data frame with file list
         df = create_file_list(folder, wells=well_list, nwells=nwells, nsites=nsites)
+        df_images = df.copy()
         
         # split file list to stacks and projections
         stacks, projs = get_stacks_and_projections(df)
@@ -377,11 +417,12 @@ def main(wells, nwells, nsites):
         if not stacks.empty:
             t = time.time()
             grouped3d = stacks.groupby(by=[PLATE, WELL, SITE]).agg(list)
-            index_map_3d, index_map_reverse_3d, final_dask_array_3d = create_dask_array_with_t_z(grouped3d)
+            index_map_3d, index_map_reverse_3d, da_images = create_dask_array_with_t_z(grouped3d)
             elapsed = time.time() - t
             print(f'Read stacks in {elapsed}')
+            print(f'da_images.shape: {da_images.shape}')
             
-            n_zsteps = final_dask_array_3d.shape[3]
+            n_zsteps = da_images.shape[3]
 
             plates = list(stacks[PLATE].unique())
             wells = list(stacks[WELL].unique())
@@ -392,7 +433,7 @@ def main(wells, nwells, nsites):
 
             # Add 3D image with ZStep axis
             viewer.add_image(
-                final_dask_array_3d, 
+                da_images, 
                 channel_axis=5,  # Channel is 4th dimension in 3D
                 name=wavelengths,
             )
@@ -400,12 +441,12 @@ def main(wells, nwells, nsites):
             if not projs.empty:
                 t = time.time()
                 grouped_projs = projs.groupby(by=[PLATE, WELL, SITE]).agg(list)
-                index_map_2d, index_map_reverse_2d, final_dask_array_2d = create_dask_array(grouped_projs)
+                index_map_2d, index_map_reverse_2d, da_projections = create_dask_array(grouped_projs)
                 elapsed = time.time() - t
                 print(f'Read projections in {elapsed}')
                 
                 # Expand 2D projection image to match the Z-axis length of the 3D image
-                expanded_2d_da = da.repeat(final_dask_array_2d[:, :, :, None, :, :, :], repeats=n_zsteps, axis=3)
+                expanded_2d_da = da.repeat(da_projections[:, :, :, None, :, :, :], repeats=n_zsteps, axis=3)
 
                 names_2d = [w + " projection" for w in wavelengths]
                 viewer.add_image(
@@ -427,24 +468,97 @@ def main(wells, nwells, nsites):
             print('No images found (stacks.empty)')
 
 
-    viewer.window.add_dock_widget(select_folder)
-    viewer.window.add_dock_widget(navigate_wells)
+    @magicgui(
+        folder={"label": "Select folder (labels)", "mode": "d", "value": last_selected_folder_labels},  # "d" stands for directory
+        auto_call=True,
+    )
+    def select_folder_labels(folder: Path):
+        if not folder or not folder.exists():
+            print("Invalid folder")
+            return
+        
+        last_selected_folder_labels = folder  # Store the selected folder
+        
+        # create data frame with file list
+        df = create_file_list(folder, ftype=ftype_labels)
+        
+        global df_labels
+        global df_missing_labels
+        df_labels = df.copy()
 
+        #print(f'index_map {index_map}')
+        #print(f'index_map_reverse {index_map_reverse}')
+        #print(df.columns)
+        #print(df_images[WELLSITE].unique())
+        #print(df_labels[WELLSITE].unique())
+        #print(df_images[TSTEP].unique())
+        #print(df_labels[TSTEP].unique())
 
-    def map_index_to_plate_well_site(index):
-        #print(f'map_index_to_filename {index}')
-        try:
-            # Extract Plate, Well, and Site from the Napari index
-            plate_idx, well_idx, site_idx, path_idx, _, _ = index  # Ignore last two indices
+        # find images without labels
+        diff = df_images.merge(df, on=[WELL, SITE, TSTEP], how='left', indicator=True, suffixes=('', '_labels'))
+        df_missing_labels = diff[diff['_merge'] == 'left_only'].drop(columns=['_merge'])
+            
+        if not df_missing_labels.empty:
+            print('missing labels')
+            print(df_missing_labels.columns)
+            print(df_missing_labels[[WELL, SITE, TSTEP]])
+            
+            print('adding empty label images')
+            for index, row in df_missing_labels.iterrows():
+                folder = None
+                mask = (df[WELL] == row[WELL]) & (df[SITE] == row[SITE])
+                folder = df[mask][DIR].unique()[0]
+                if folder:
+                    save_empty_label_image(folder, row[TSTEP], '_dummy_labels.png')
+                    new_row = {PLATE: row[PLATE], WELL: row[WELL], SITE: row[SITE], TSTEP: row[TSTEP],\
+                               PATH: folder}
+                    df_labels.loc[len(df_labels)] = new_row
+                    df_labels.sort_values(by=[PLATE, WELL, SITE, TSTEP], inplace=True, ignore_index=True)
+                else:
+                    print('No labels found for ' + folder)
+                    return
+            return
+            
+        
+        # remove previous label layer
+        if len(viewer.layers) > 1:
+            viewer.layers.pop()
 
-            plate, well, site = index_map_reverse_3d[(plate_idx, well_idx, site_idx)]
-            #print(f'plate, well, site: {plate}, {well}, {site}')
+        if not df.empty:
+            t = time.time()
+            grouped_df = df.groupby(by=[PLATE, WELL, SITE]).agg(list)
+            _index_map, _index_map_reverse, da_labels = create_dask_array_with_t_z(grouped_df)
+            elapsed = time.time() - t
+            print(f'Read labels in {elapsed}')
+            print(f'da_labels.shape: {da_labels.shape}')
+            da_labels = da.squeeze(da_labels, 5)
+            print(f'da_labels.shape: {da_labels.shape}')
+            
+            viewer.add_labels(
+                da_labels, 
+                name = 'labels',
+            )
 
-            return plate, well, site
+            # start from Z-slice 0 to have labels visible
+            # start from well 0 to match pull-down
+            # start from site 0
+            for i in range(len(viewer.dims.point)):
+                #print(i)
+                viewer.dims.set_point(i,0)
+                
+        else:
+            print('No label images found (stacks.empty)')
 
-        except (KeyError, IndexError):
-            return "Unknown plate or wellsite index"
-
+    # Create a container widget to hold the folder selectors
+    class FolderSelectors(QWidget):
+        def __init__(self):
+            super().__init__()
+            layout = QVBoxLayout()
+            layout.addWidget(select_folder_images.native)
+            layout.addWidget(select_folder_labels.native)
+            layout.setContentsMargins(0, 0, 0, 0)  # Remove margins
+            layout.setSpacing(5)  # Adjust spacing
+            self.setLayout(layout)
 
     # Define a function to save the current view
     def save_current_view():
@@ -452,7 +566,7 @@ def main(wells, nwells, nsites):
         current_index = tuple(viewer.dims.current_step)
 
         # Map index to image slice
-        img = final_dask_array_3d[current_index[:3]]  # Adjust indexing based on shape
+        img = da_images[current_index[:4]]  # Adjust indexing based on shape
         print(img.shape)
 
         plate, well, site = map_index_to_plate_well_site(current_index)
@@ -473,7 +587,9 @@ def main(wells, nwells, nsites):
     # Create a Napari button widget
     save_button = magicgui(save_current_view, call_button="Save Current View")
 
-    # Add button to Napari viewer
+    
+    viewer.window.add_dock_widget(FolderSelectors(), area='right')
+    viewer.window.add_dock_widget(navigate_wells)
     viewer.window.add_dock_widget(save_button, area="right")
 
     viewer.window._qt_window.setWindowTitle("napari-moldev")
