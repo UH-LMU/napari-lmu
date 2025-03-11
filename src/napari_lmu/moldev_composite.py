@@ -22,6 +22,7 @@ from tqdm import tqdm
 
 colormap = ["blue", "green", "red"]
 
+DIR = 'Directory'
 PATH = 'Path'
 DATE = 'Date'
 TSTEP = 'TStep'
@@ -66,12 +67,16 @@ def create_file_list(orig, ftype='tif', wells=[], nwells=-1, nsites=-1):
     # Add the extracted columns back to the original dataframe
     df = df.join(df_extracted)
 
+    df[DIR] = df[PATH].apply(lambda x: str(Path(x).parent))
     df[PLATE] = df[PLATE].astype(str)
     df[WELL] = df[WELL].astype(str)
     df[SITE] = df[SITE].astype(int)
     df[CHANNEL] = df[CHANNEL].astype(str)
     df[TSTEP] = df[TSTEP].astype(int)
     df[ZSTEP] = df[ZSTEP].astype(int)
+
+    df.sort_values(by=[PLATE, WELL, SITE, TSTEP, ZSTEP, CHANNEL],
+                   inplace=True, ignore_index=True)
 
     if len(wells) > 0:
         mask = df[WELL].isin(wells)
@@ -85,7 +90,6 @@ def create_file_list(orig, ftype='tif', wells=[], nwells=-1, nsites=-1):
         mask = df[SITE] <= nsites
         df = df[mask]
     
-    df.sort_values(by=[PLATE, WELL, SITE, TSTEP, ZSTEP, CHANNEL], inplace=True, ignore_index=True)
     return df
 
 
@@ -483,7 +487,8 @@ def main(wells, nwells, nsites, ftype_labels):
         last_selected_folder_labels = folder  # Store the selected folder
         
         # create data frame with file list
-        df = create_file_list(folder, ftype=ftype_labels)
+        df = create_file_list(folder, ftype=ftype_labels,
+                              wells=well_list, nwells=nwells, nsites=nsites)
         
         global df_labels
         global df_missing_labels
@@ -503,7 +508,11 @@ def main(wells, nwells, nsites, ftype_labels):
             
         if not df_missing_labels.empty:
             print('missing labels')
+            print(f'df_images.shape {df_images.shape}')
+            print(f'df_labels.shape {df_labels.shape}')
             print(df_missing_labels.columns)
+            #print(df_images[[WELL, SITE, TSTEP]])
+            #print(df_labels[[WELL, SITE, TSTEP]])
             print(df_missing_labels[[WELL, SITE, TSTEP]])
             
             print('adding empty label images')
