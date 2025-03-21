@@ -2,8 +2,11 @@
 
 Scripts to start Napari to browse data from LMU HCS instruments. The data structure is read with Dask, so it will not take huge amounts of memory.
 
-## Install Anaconda or Micromamba
-Find Anaconda in Software Center, install latest version.
+## Prerequisites
+On University of Helsinki Windows PCs these can be installed via Software Center.
+
+- Anaconda
+- Git
 
 ## Create and activate environment
 Download the environment file from this repository (env\_napari.yml).
